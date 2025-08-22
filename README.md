@@ -5,12 +5,15 @@ The image is automatically built and pushed to **GitHub Container Registry (GHCR
 
 The base image is taken from the **official Nextcloud image** on Docker Hub: [https://hub.docker.com/_/nextcloud/](https://hub.docker.com/_/nextcloud/)
 
+**Note:** This image is built only for **linux/amd64**. ARM architectures are not supported.
+
 ---
 
 ## Features
 
 - Based on the **official Nextcloud production-apache image** from Docker Hub  
-- **FFmpeg pre-installed** for video previews and transcoding  
+- **FFmpeg pre-installed** for video previews
+- Built for **amd64 only**    
 - Tags include the **Nextcloud version** and `production-apache` for clarity  
 - Fully automated build and push using **GitHub Actions**  
 
@@ -28,7 +31,6 @@ The base image is taken from the **official Nextcloud image** on Docker Hub: [ht
 ## Usage
 
 Pull the image from GHCR:
-
 ```bash
 docker pull ghcr.io/michalwilk/nextcloud-ffmpeg:production-apache
 # Or for a specific Nextcloud version:
@@ -36,12 +38,16 @@ docker pull ghcr.io/michalwilk/nextcloud-ffmpeg:<version>-apache
 ```
 
 Run your container:
-
 ```bash
 docker run -d \
   -p 8080:80 \
   -v /path/to/nextcloud/data:/var/www/html/data \
   ghcr.io/michalwilk/nextcloud-ffmpeg:production-apache
+```
+
+Optional local build:
+```bash
+docker buildx build --platform linux/amd64 -t nextcloud-ffmpeg:local
 ```
 
 ## License
