@@ -1,0 +1,23 @@
+# Docker files
+**/docker-compose.override.yml
+**/docker-compose.override.yaml
+
+# Docker cache
+**/.docker
+**/docker/tmp
+
+# System / OS
+.DS_Store
+Thumbs.db
+
+# GitHub Actions / logs
+**/.github/workflows/*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# VSCode / IDE
+.vscode/
+.idea/

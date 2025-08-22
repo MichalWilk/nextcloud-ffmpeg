@@ -1,0 +1,112 @@
+name: Auto Build Nextcloud Image with FFmpeg
+
+on:
+  schedule:
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-if-updated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Get upstream digest without pulling
+        id: digest
+        run: |
+          set -euo pipefail
+          IMAGE=nextcloud
+          TAG=production-apache
+
+          TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/nextcloud:pull" | jq -r .token)
+
+          DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json" \
+              "https://registry-1.docker.io/v2/library/${IMAGE}/manifests/${TAG}" \
+              | grep -i 'docker-content-digest:' | awk '{print $2}' | tr -d $'\r')
+
+          if [ -z "$DIGEST" ]; then
+            echo "Failed to fetch upstream digest"
+            exit 1
+          fi
+
+          echo "UPSTREAM_DIGEST=$DIGEST" >> $GITHUB_ENV
+          echo "Upstream digest: $DIGEST"
+
+      - name: Check if build needed
+        id: check_build
+        run: |
+          set -euo pipefail
+          TAG=production-apache
+          DIGEST_FILE="digests/${TAG}_DIGEST"
+
+          if [ -f "$DIGEST_FILE" ]; then
+            OLD_DIGEST=$(cat "$DIGEST_FILE")
+            echo "Old digest: $OLD_DIGEST"
+            echo "New digest: $UPSTREAM_DIGEST"
+            if [ "$OLD_DIGEST" = "$UPSTREAM_DIGEST" ]; then
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "No changes detected, skipping build."
+              exit 0
+            fi
+          fi
+
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "DIGEST_FILE=$DIGEST_FILE" >> $GITHUB_ENV
+
+      - name: Download Nextcloud image
+        if: steps.check_build.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          docker pull docker.io/library/nextcloud:production-apache
+
+      - name: Get Nextcloud version
+        if: steps.check_build.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION=$(docker run --rm --entrypoint cat docker.io/library/nextcloud:production-apache /usr/src/nextcloud/version.php \
+                    | grep OC_VersionString | cut -d"'" -f2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Nextcloud version: $VERSION"
+
+      - name: Log in to GitHub Container Registry
+        if: steps.check_build.outputs.changed == 'true'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image with FFmpeg
+        if: steps.check_build.outputs.changed == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            NEXTCLOUD_TAG=production-apache
+          tags: |
+            ghcr.io/michalwilk/nextcloud-ffmpeg:${{ env.VERSION }}-apache
+            ghcr.io/michalwilk/nextcloud-ffmpeg:production-apache
+
+      - name: Save upstream digest and commit
+        if: steps.check_build.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "$DIGEST_FILE")"
+
+          echo "$UPSTREAM_DIGEST" > "$DIGEST_FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "$DIGEST_FILE"
+          git commit -m "Update ${DIGEST_FILE}"
+          git push
+
